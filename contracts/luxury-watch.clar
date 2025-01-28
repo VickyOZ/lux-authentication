@@ -49,6 +49,12 @@
     )
 )
 
+(define-private (is-valid-principal (address principal))
+    (and
+        (not (is-eq address (var-get registry-admin)))
+        (not (is-eq address 'SP000000000000000000002Q6VF78)))
+)
+
 ;; Data Maps
 (define-map WatchRegistry
     { watch-id: uint }
@@ -81,6 +87,7 @@
 (define-public (set-certifier-status (certifier principal) (status bool))
     (begin
         (asserts! (is-eq tx-sender (var-get registry-admin)) ERR-NOT-AUTHORIZED)
+        (asserts! (is-valid-principal certifier) ERR-INVALID-INPUT)
         (ok (map-set AuthorizedCertifiers certifier status))
     )
 )
@@ -163,6 +170,7 @@
     (begin
         (asserts! (is-valid-watch-id watch-id) ERR-INVALID-WATCH-ID)
         (asserts! (not (is-eq recipient tx-sender)) ERR-INVALID-INPUT)
+        (asserts! (is-valid-principal recipient) ERR-INVALID-INPUT)
         
         (let
             (

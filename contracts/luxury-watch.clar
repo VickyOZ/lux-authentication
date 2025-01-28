@@ -8,10 +8,17 @@
 (define-constant ERR-INVALID-PRICE (err u104))
 (define-constant ERR-INVALID-WATCH-ID (err u105))
 (define-constant ERR-INVALID-INPUT (err u106))
+(define-constant ERR-INVALID-SCORE (err u107))
 
 ;; Data Variables
 (define-data-var registry-admin principal tx-sender)
 (define-data-var watch-counter uint u0)
+
+;; Map for Authorized Certifiers
+(define-map AuthorizedCertifiers
+    principal 
+    bool
+)
 
 ;; Helper Functions
 (define-private (is-valid-watch-id (id uint))
@@ -32,6 +39,13 @@
     (and 
         (> (len loc) u0)
         (< (len loc) u100)
+    )
+)
+
+(define-private (is-valid-condition-score (score uint))
+    (and 
+        (>= score u0)
+        (<= score u100)
     )
 )
 
@@ -61,6 +75,13 @@
         (asserts! (is-eq tx-sender (var-get registry-admin)) ERR-NOT-AUTHORIZED)
         (asserts! (not (is-eq new-admin tx-sender)) ERR-INVALID-INPUT)
         (ok (var-set registry-admin new-admin))
+    )
+)
+
+(define-public (set-certifier-status (certifier principal) (status bool))
+    (begin
+        (asserts! (is-eq tx-sender (var-get registry-admin)) ERR-NOT-AUTHORIZED)
+        (ok (map-set AuthorizedCertifiers certifier status))
     )
 )
 
@@ -107,6 +128,53 @@
             (map-set WatchRegistry
                 { watch-id: watch-id }
                 (merge watch { storage-location: new-location })
+            )
+            (ok true)
+        )
+    )
+)
+
+(define-public (update-condition-score
+    (watch-id uint)
+    (new-score uint)
+    )
+    (begin
+        (asserts! (is-valid-watch-id watch-id) ERR-INVALID-WATCH-ID)
+        (asserts! (is-valid-condition-score new-score) ERR-INVALID-SCORE)
+        (asserts! (default-to false (map-get? AuthorizedCertifiers tx-sender)) ERR-NOT-AUTHORIZED)
+        
+        (let
+            (
+                (watch (unwrap! (map-get? WatchRegistry { watch-id: watch-id }) ERR-WATCH-NOT-FOUND))
+            )
+            (map-set WatchRegistry
+                { watch-id: watch-id }
+                (merge watch { condition-score: new-score })
+            )
+            (ok true)
+        )
+    )
+)
+
+(define-public (transfer-watch
+    (watch-id uint)
+    (recipient principal)
+    )
+    (begin
+        (asserts! (is-valid-watch-id watch-id) ERR-INVALID-WATCH-ID)
+        (asserts! (not (is-eq recipient tx-sender)) ERR-INVALID-INPUT)
+        
+        (let
+            (
+                (watch (unwrap! (map-get? WatchRegistry { watch-id: watch-id }) ERR-WATCH-NOT-FOUND))
+            )
+            ;; Check ownership and not for sale
+            (asserts! (is-eq (get owner watch) tx-sender) ERR-NOT-AUTHORIZED)
+            (asserts! (not (get for-sale watch)) ERR-ALREADY-FOR-SALE)
+            
+            (map-set WatchRegistry
+                { watch-id: watch-id }
+                (merge watch { owner: recipient })
             )
             (ok true)
         )
@@ -189,7 +257,6 @@
 )
 
 ;; Read-Only Functions
-;; Read-Only Functions
 (define-read-only (get-watch-details (watch-id uint))
     (if (is-valid-watch-id watch-id)
         (map-get? WatchRegistry { watch-id: watch-id })
@@ -206,4 +273,8 @@
 
 (define-read-only (get-admin)
     (var-get registry-admin)
+)
+
+(define-read-only (is-certifier (address principal))
+    (default-to false (map-get? AuthorizedCertifiers address))
 )
